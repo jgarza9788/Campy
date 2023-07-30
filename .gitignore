@@ -1,0 +1,9 @@
+passwords.json
+secret.json
+*.csv
+*log
+*.log
+*.pt
+runs
+frames
+frames\*

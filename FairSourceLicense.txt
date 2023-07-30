@@ -1,0 +1,25 @@
+Fair Source License, version 0.9.5
+
+Copyright (C) 2022 Justin Garza
+
+License Name: Fair Source License, version 0.9.5
+
+Software: Campy
+
+Licensor: Justin Garza (JGarza9788@gmail.com)
+
+License Grant: Licensor hereby grants you a non-exclusive, non-transferable, royalty-free, and fully-paid-up license under all copyright and patent rights to use, copy, distribute, prepare derivative works of, publicly perform, and display the Software, subject to the following terms and conditions:
+
+Use Limitation: You are allowed to use the Software for non-commercial purposes with up to 25 users. For commercial use, please contact the Licensor to discuss licensing options.
+
+Conditions: Any redistribution of the Software in source code or other forms must include a copy of this license document. Redistribution is only allowed subject to this license.
+
+Trademarks: This license does not grant you any rights in the trademarks, service marks, brand names, or logos of the Licensor.
+
+Disclaimer: THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OR CONDITION, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. LICENSORS DISCLAIM ALL LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE.
+
+Termination: If you violate the terms of this license, your rights will terminate automatically and will not be reinstated without the prior written consent of Licensor. Termination will not affect the rights of others who have received copies of the Software from you.
+
+Additional Legal Action: Violation of this license may result in legal action and other remedies.
+
+For any questions or inquiries, please contact the Licensor.
