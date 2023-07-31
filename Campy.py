@@ -2,6 +2,8 @@ import os,time
 import json5 as json
 from datetime import datetime
 import cv2
+import pandas as pd
+from collections import Counter
 import numpy as np
 import torch
 
@@ -190,7 +192,7 @@ class Campy():
         self.object_count_history = self.load(os.path.join(self.DIR,'och.json'))
         if self.object_count_history == {}:
             for c in self.cam_nums:
-                self.object_count_history[c] = [0] * self.history_size
+                self.object_count_history[c] = [] * self.history_size
             
         if demo:
             self.demo()
@@ -235,16 +237,19 @@ class Campy():
                     rdf = results.pandas().xyxy[0]
                     
                     records = rdf.to_dict(orient='records')
+                    print(records)
+                    
+                    rlist = sorted([r['name'] for r in records])
                     
                     # # update the history for this camera
-                    self.object_count_history[k].append(len(records))
+                    self.object_count_history[k].append(rlist)
                     self.object_count_history[k] = self.object_count_history[k][-self.history_size:]
 
                     # compare the number of objects with 
                     # 1 sec ago, 15 sec ago, and 30 sec ago
                     for m in [-1,0,30]:
                         try:
-                            if self.object_count_history[k][m] != len(records):
+                            if self.object_count_history[k][m] != rlist:
                                 self.log.info(results.__repr__())
                                 for r in records:
                                     self.log.info(str(r))
@@ -276,6 +281,27 @@ class Campy():
                 print(frame.shape)
 
                 results = self.model(frame)
+
+                rdf = results.pandas().xyxy[0]
+
+                # x = rdf['name'].value_counts()
+                # print(x,type(x))
+                # print(x.tolist())
+
+
+                # crdf =rdf[['name']].apply(pd.value_counts).fillna(0) 
+                # print(crdf,type(crdf))
+                # print(crdf.to_dict(orient='records'))
+                    
+                records = rdf[['name']].to_dict(orient='records')
+                print(records)
+
+                
+                l = []
+                for r in records:
+                    l.append(r['name'])
+                print(list(Counter(l).most_common()))
+                
                 # results.print()
                 # results.show()
                 # cv2.imwrite(self.get_filename(['unmarked',k]),frame)

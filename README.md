@@ -88,7 +88,7 @@ this can run on a dedicated machine or on your security system machine.
     * this can be done in steps
         * delete all m_[...] and u_[...] that are older than X
         * delete all s_[...] that are older then Y 
- * [] the current algorithum only looks at how many objects with a specific period of time, but we should be looking both at the objects and their types.
+ * [x] the current algorithum only looks at how many objects with a specific period of time, but we should be looking both at the objects and their types.
 
 
 
