@@ -1,6 +1,6 @@
-import os,time
+import os,time,re
 import json5 as json
-from datetime import datetime
+from datetime import datetime,timedelta
 import cv2
 import pandas as pd
 from collections import Counter
@@ -12,6 +12,8 @@ import shutil
 import logging 
 from logging import Logger
 from logging.handlers import RotatingFileHandler
+
+import matplotlib.pyplot as plt
 
 # info on YOLO
 #https://docs.ultralytics.com/yolov5/tutorials/pytorch_hub_model_loading/#load-yolov5-with-pytorch-hub
@@ -113,7 +115,8 @@ class Campy():
             min_confidence=0.50,
             model_size='m',
             interval=1.0,
-            history_size:int = 120,
+            history_size:int = 240,
+            diffThreshold: float = 0.10,
             demo=False
             ):
         """creates a campy object
@@ -123,7 +126,9 @@ class Campy():
             classes (list, optional): Defaults to [0,1,2,3,4,5,6,7,8,14,15,16], see list above
             min_confidence (float, optional): Defaults to 0.40. (accuracy)
             model_size (str, optional): Defaults to 'm', should be n,s,m,l, or x.
-            interval (float, optional): 
+            interval (float, optional): Defaults to 1.0, how many seconds per loop
+            history_size (int, optional): Defaults to 240 (4 mins), how much history to keep in memory
+            diffThreshold (float, optional): Defailts to 0.1 (10% difference), the amount of change before saving an image
             demo (bool, optional): Defaults to False., used for demo only
         """
         self.url_template = 'rtsp://{user}:{password}@{ip}:{port}/cam/realmonitor?channel={cam}&subtype=0'
@@ -150,10 +155,12 @@ class Campy():
         self.log.info(f'{model_size=}')
         self.log.info(f'{interval=}')
         self.log.info(f'{history_size=}')
+        self.log.info(f'{diffThreshold=}')
         self.log.info(f'{demo=}')
 
         self.interval = interval
         self.history_size = history_size
+        self.diffThreshold = diffThreshold
 
         # convert strings to ints
         # print(classes)
@@ -192,34 +199,54 @@ class Campy():
         self.object_count_history = self.load(os.path.join(self.DIR,'och.json'))
         if self.object_count_history == {}:
             for c in self.cam_nums:
-                self.object_count_history[c] = [] * self.history_size
+                self.object_count_history[c] = { 'mframes': [], 'diffhist':[], 'hour': []} 
             
-        if demo:
-            self.demo()
-        else:
-            self.run_loop()
 
     def run_loop(self):
         """
         runs an infinate loop to monitor the cameras
         """
         self.log.info('starting')
-        n = 0 
+
+        _date = datetime.now().strftime('%Y%m%d')
+        _hour = datetime.now().strftime('%H')
+
+
         while True:
 
-            n += 1
-            if n == 120:
-                n = 0
-                self.save(
-                    os.path.join(self.DIR,'och.json'),
-                    self.object_count_history
-                    )
-                
-                # clear runs
+
+            # new hour
+            if _hour != datetime.now().strftime('%H'):
                 shutil.rmtree(os.path.join(self.DIR,'runs'))
+                _hour = datetime.now().strftime('%H')
+            
+            # new Day
+            if _date != datetime.now().strftime('%Y%m%d'):
+                for k in self.cams.keys():
+                    plt.figure(figsize=(16, 4))
+                    plt.plot(
+                            self.object_count_history[k]['hour'],
+                            self.object_count_history[k]['diffhist']
+                            )
+                    plt.xlabel('hour')
+                    plt.ylabel('diffhist')
+                    plt.title(_date)
+
+                    plt.savefig(self.get_filename('plot',[k]))
+
+                    dfbra = self.delete_files_by_regex_and_age
+                    dfbra(os.path.join(self.DIR,'frames'),'^(m_|u_).*png',90)
+                    dfbra(os.path.join(self.DIR,'frames'),'^(s_).*png',730)
+                    dfbra(os.path.join(self.DIR,'plot'),'.*png',730)
+
+                    self.object_count_history[k]['diffhist'] = []
+                    self.object_count_history[k]['hour'] = []
+                    _date = datetime.now().strftime('%Y%m%d')
+
 
             for k in self.cams.keys():
-                self.log.info(f'{k=} | {self.object_count_history[k]=}')
+                # self.log.info(f'{k=} ')
+                # self.log.info(f'{k=} | {self.object_count_history[k]=}')
 
                 if self.cams[k].isOpened():
                     ret,frame = self.cams[k].read()
@@ -232,36 +259,79 @@ class Campy():
                     # print(k)
                     # print(frame.shape)
 
+                    AvgFrame = self.avgFrame(self.object_count_history[k]['mframes'])
+
+                    h = frame.shape[0]
+                    w = frame.shape[1]
+                    mframe = cv2.resize(frame, (int(w/4), int(h/4)) )
+
+                    self.object_count_history[k]['mframes'].append(mframe)
+                    self.object_count_history[k]['mframes'] = self.object_count_history[k]['mframes'][-self.history_size:]
+
+
+                    dframe = np.subtract(AvgFrame,mframe)
+                    difference = round( np.sum(dframe) / (h*w*3.0) ,2)
+
+                    # cv2.imwrite(self.get_filename(['dframe',k,str(difference)]),dframe)
+
+                    self.object_count_history[k]['diffhist'].append(difference)
+
+                    now = datetime.now()
+                    self.object_count_history[k]['hour'].append( now.hour + (now.minute / 60.0) )
+
+                    print(k)
+                    print(self.object_count_history[k]['diffhist'])
+                    print('\n')
+
+
+                    if abs(difference) < self.diffThreshold:
+                        continue
+                    
+                    self.log.info(f'Above diffThreshold. {difference} {self.diffThreshold}')
+
                     results = self.model(frame)                    
 
                     rdf = results.pandas().xyxy[0]
-                    
                     records = rdf.to_dict(orient='records')
-                    print(records)
+                    for r in records:
+                        self.log.info(str(r))
                     
-                    rlist = sorted([r['name'] for r in records])
+                    self.save_frames(frame,k,results)
+
+                    # rlist = sorted([r['name'] for r in records])
                     
-                    # # update the history for this camera
-                    self.object_count_history[k].append(rlist)
-                    self.object_count_history[k] = self.object_count_history[k][-self.history_size:]
+                    # # # update the history for this camera
+                    # self.object_count_history[k].append(rlist)
+                    # self.object_count_history[k] = self.object_count_history[k][-self.history_size:]
 
-                    # compare the number of objects with 
-                    # 1 sec ago, 15 sec ago, and 30 sec ago
-                    for m in [-1,0,30]:
-                        try:
-                            if self.object_count_history[k][m] != rlist:
-                                self.log.info(results.__repr__())
-                                for r in records:
-                                    self.log.info(str(r))
-                                self.save_frames(frame,k,results)
-                                break
-                        except:
-                            pass
-
+                    # # compare the number of objects with 
+                    # # 1 sec ago, 15 sec ago, and 30 sec ago
+                    # for m in [-1,0,30]:
+                    #     try:
+                    #         if self.object_count_history[k][m] != rlist:
+                    #             self.log.info(results.__repr__())
+                    #             for r in records:
+                    #                 self.log.info(str(r))
+                    #             self.save_frames(frame,k,results)
+                    #             break
+                    #     except:
+                    #         pass
 
                 else:
                     self.log.warning(f'{k} cam is not open')
             time.sleep(self.interval)
+
+    def avgFrame(self,frames:list[np.ndarray]):
+        """returns the average frame (image)
+
+        Args:
+            frames (list[np.ndarray]): a list of images
+
+        Returns:
+            np.ndarray: the average image/frame 
+        """
+
+        return np.sum(frames,axis=0)/len(frames)
 
     def demo(self):
         """
@@ -312,24 +382,44 @@ class Campy():
 
         self.log.info('done')
 
+    def delete_files_by_regex_and_age(self, path:str, regex_pattern:str, days_old:int):
+        self.log.info(f'{path=} , {regex_pattern=} , {days_old=}')
+        current_time = datetime.now()
+
+        for filename in os.listdir(path):
+            file_path = os.path.join(path, filename)
+            if os.path.isfile(file_path):
+                # Check if the filename matches the regex pattern
+                if re.match(regex_pattern, filename):
+                    # Get the file's creation time
+                    file_creation_time = datetime.fromtimestamp(os.path.getctime(file_path))
+                    
+                    # Calculate the age of the file in days
+                    age_in_days = (current_time - file_creation_time).days
+                    
+                    if age_in_days > days_old:
+                        # Delete the file if it matches the regex pattern and is over int days old
+                        os.remove(file_path)
+                        self.log.info(f"Deleted: {file_path}")
+
     def save_frames(self,frame:np.ndarray,cam_num:str,results):
-        filename = self.get_filename(['u',cam_num])
+        filename = self.get_filename('frames',['u',cam_num])
         cv2.imwrite(filename,frame)
         self.log.info(f'saved: {filename}')
 
         h = frame.shape[0]
         w = frame.shape[1]
         miniframe = cv2.resize(frame, (int(w/2), int(h/2)) )
-        filename = self.get_filename(['s',cam_num])
+        filename = self.get_filename('frames',['s',cam_num])
         cv2.imwrite(filename,miniframe)
         self.log.info(f'saved: {filename}')
 
         results.save()
-        filename = self.get_filename(['m',cam_num])
+        filename = self.get_filename('frames',['m',cam_num])
         cv2.imwrite(filename,frame)
         self.log.info(f'saved: {filename}')
 
-    def get_filename(self,prefixes:list[str]):
+    def get_filename(self,foldername:str,prefixes:list[str]):
         """returns a file name to save the image
 
         Args:
@@ -340,7 +430,7 @@ class Campy():
         """
         fn = '_'.join(prefixes) + '_' + datetime.now().strftime('%Y%m%d%H%M_%S') + '.png'
 
-        folder = os.path.join(self.DIR,'frames')
+        folder = os.path.join(self.DIR,foldername)
         if os.path.exists(folder) == False:
             os.mkdir(folder)
 
@@ -442,8 +532,8 @@ if __name__ == "__main__":
 
     # print([k for k,v in classes_dict.items() if v in [1,2,3]])
 
-    # campy = Campy(demo=True)
-    campy = Campy(demo=False)
+    # Campy(demo=True).run_loop()
+    Campy(demo=False).run_loop()
 
     # x = [0,1,2,3,4,5,6,7,8]
     # x.append(9)
