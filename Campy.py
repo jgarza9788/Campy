@@ -116,7 +116,8 @@ class Campy():
             model_size='m',
             interval=1.0,
             history_size:int = 240,
-            diffThreshold: float = 0.10,
+            diffThreshold: float = 0.01,
+            save_dframe:bool = False,
             demo=False
             ):
         """creates a campy object
@@ -156,11 +157,13 @@ class Campy():
         self.log.info(f'{interval=}')
         self.log.info(f'{history_size=}')
         self.log.info(f'{diffThreshold=}')
+        self.log.info(f'{save_dframe=}')
         self.log.info(f'{demo=}')
 
         self.interval = interval
         self.history_size = history_size
         self.diffThreshold = diffThreshold
+        self.save_dframes =  save_dframe
 
         # convert strings to ints
         # print(classes)
@@ -211,7 +214,6 @@ class Campy():
         _date = datetime.now().strftime('%Y%m%d')
         _hour = datetime.now().strftime('%H')
 
-
         while True:
 
 
@@ -237,6 +239,7 @@ class Campy():
                     dfbra = self.delete_files_by_regex_and_age
                     dfbra(os.path.join(self.DIR,'frames'),'^(m_|u_).*png',90)
                     dfbra(os.path.join(self.DIR,'frames'),'^(s_).*png',730)
+                    dfbra(os.path.join(self.DIR,'frames'),'^(dframe_).*png',1)
                     dfbra(os.path.join(self.DIR,'plot'),'.*png',730)
 
                     self.object_count_history[k]['diffhist'] = []
@@ -263,31 +266,43 @@ class Campy():
 
                     h = frame.shape[0]
                     w = frame.shape[1]
-                    mframe = cv2.resize(frame, (int(w/4), int(h/4)) )
+                    mframe = cv2.resize(frame, (int(w/8), int(h/8)) )
+                    # self.log.info(f'{mframe=}')
 
                     self.object_count_history[k]['mframes'].append(mframe)
                     self.object_count_history[k]['mframes'] = self.object_count_history[k]['mframes'][-self.history_size:]
 
-
                     dframe = np.subtract(AvgFrame,mframe)
-                    difference = round( np.sum(dframe) / (h*w*3.0) ,2)
+                    difference = abs( round( np.sum(dframe) / (h*w*3.0*255.0) , 10 ) )
 
-                    # cv2.imwrite(self.get_filename(['dframe',k,str(difference)]),dframe)
+                    #see if dframe has a hot-zone4
+                    chunkH = dframe.shape[0]//8
+                    chunkW = dframe.shape[1]//8
+
+                    hasHotSpot =  False
+
+                    for i in range(0, dframe.shape[0], chunkH):
+                        for j in range(0, dframe.shape[1], chunkW):
+                            chunk = dframe[i:i+chunkH, j:j+chunkW]
+
+                            sum_chuck = abs( round( np.sum(chunk)/(chunkH*chunkW*3.0*255.0) ,10 ))
+
+                            self.log.info(f'{k} - {sum_chuck=}')
+
+                            if sum_chuck > self.diffThreshold:
+                                hasHotSpot = True
+                    
 
                     self.object_count_history[k]['diffhist'].append(difference)
-
                     now = datetime.now()
                     self.object_count_history[k]['hour'].append( now.hour + (now.minute / 60.0) )
 
-                    print(k)
-                    print(self.object_count_history[k]['diffhist'])
-                    print('\n')
-
-
-                    if abs(difference) < self.diffThreshold:
-                        continue
                     
-                    self.log.info(f'Above diffThreshold. {difference} {self.diffThreshold}')
+                    if hasHotSpot == False:
+                        continue
+
+                    self.log.info(f'{k} - {difference=} {self.diffThreshold=}')
+                    self.log.info(f'{k} - {hasHotSpot=}')
 
                     results = self.model(frame)                    
 
@@ -297,6 +312,9 @@ class Campy():
                         self.log.info(str(r))
                     
                     self.save_frames(frame,k,results)
+
+                    if self.save_dframes:
+                        cv2.imwrite(self.get_filename('frames',['dframe',k,str(difference)]),dframe)
 
                     # rlist = sorted([r['name'] for r in records])
                     
@@ -320,6 +338,8 @@ class Campy():
                 else:
                     self.log.warning(f'{k} cam is not open')
             time.sleep(self.interval)
+
+
 
     def avgFrame(self,frames:list[np.ndarray]):
         """returns the average frame (image)
@@ -533,7 +553,7 @@ if __name__ == "__main__":
     # print([k for k,v in classes_dict.items() if v in [1,2,3]])
 
     # Campy(demo=True).run_loop()
-    Campy(demo=False).run_loop()
+    Campy(demo=False,save_dframe=True).run_loop()
 
     # x = [0,1,2,3,4,5,6,7,8]
     # x.append(9)

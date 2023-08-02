@@ -83,11 +83,7 @@ this can run on a dedicated machine or on your security system machine.
 
 ## things to do
  * [] enable multithreading
- * [] capacity threshold - how many files should we have before deleting a few.
-    * maybe the default should be 250GBs of frames?
-    * this can be done in steps
-        * delete all m_[...] and u_[...] that are older than X
-        * delete all s_[...] that are older then Y 
+ * [x] cleans out old files
  * [x] the current algorithum only looks at how many objects with a specific period of time, but we should be looking both at the objects and their types.
 
 
