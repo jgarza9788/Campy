@@ -7,7 +7,7 @@
 	* [Table of Contents](#table-of-contents)
 	* [Description](#description)
 	* [Requirements](#requirements)
-		* [Python:](#python:)
+		* [Python](#python)
 		* [RTSP securty system](#rtsp-securty-system)
 		* [Libraries](#libraries)
 		* [YOLOv5](#yolov5)

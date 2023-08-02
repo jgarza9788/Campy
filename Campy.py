@@ -116,7 +116,7 @@ class Campy():
             model_size='m',
             interval=1.0,
             history_size:int = 240,
-            diffThreshold: float = 0.01,
+            diffThreshold: float = 0.5,
             save_dframe:bool = False,
             demo=False
             ):
@@ -275,9 +275,12 @@ class Campy():
                     dframe = np.subtract(AvgFrame,mframe)
                     difference = abs( round( np.sum(dframe) / (h*w*3.0*255.0) , 10 ) )
 
-                    #see if dframe has a hot-zone4
-                    chunkH = dframe.shape[0]//8
-                    chunkW = dframe.shape[1]//8
+                    ## see if dframe has a hot-zone
+                    # chunkH = dframe.shape[0]//8
+                    # chunkW = dframe.shape[1]//8
+
+                    chunkH = 10
+                    chunkW = 10
 
                     hasHotSpot =  False
 
@@ -287,10 +290,12 @@ class Campy():
 
                             sum_chuck = abs( round( np.sum(chunk)/(chunkH*chunkW*3.0*255.0) ,10 ))
 
-                            self.log.info(f'{k} - {sum_chuck=}')
+                            # self.log.info(f'{k} - {sum_chuck=}')
 
                             if sum_chuck > self.diffThreshold:
                                 hasHotSpot = True
+                                i += 999
+                                j += 999
                     
 
                     self.object_count_history[k]['diffhist'].append(difference)
