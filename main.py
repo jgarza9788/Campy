@@ -116,7 +116,7 @@ class Campy():
             model_size='m',
             interval=1.0,
             history_size:int = 240,
-            diffThreshold: float = 0.5,
+            diffThreshold: float = 0.25,
             save_dframe:bool = False,
             demo=False
             ):
@@ -198,11 +198,10 @@ class Campy():
         self.cam_nums = cam_nums
         self.cams = self.get_cams()
 
-        # this will be used to store a history of object counts for each camera
-        self.object_count_history = self.load(os.path.join(self.DIR,'och.json'))
-        if self.object_count_history == {}:
-            for c in self.cam_nums:
-                self.object_count_history[c] = { 'mframes': [], 'diffhist':[], 'hour': []} 
+        # this will be used to store a history for each camera
+        self.hist = {}
+        for c in self.cam_nums:
+            self.hist[c] = { 'mframes': [], 'diffhist':[], 'hour': []} 
             
 
     def run_loop(self):
@@ -227,8 +226,8 @@ class Campy():
                 for k in self.cams.keys():
                     plt.figure(figsize=(16, 4))
                     plt.plot(
-                            self.object_count_history[k]['hour'],
-                            self.object_count_history[k]['diffhist']
+                            self.hist[k]['hour'],
+                            self.hist[k]['diffhist']
                             )
                     plt.xlabel('hour')
                     plt.ylabel('diffhist')
@@ -242,14 +241,14 @@ class Campy():
                     dfbra(os.path.join(self.DIR,'frames'),'^(dframe_).*png',1)
                     dfbra(os.path.join(self.DIR,'plot'),'.*png',730)
 
-                    self.object_count_history[k]['diffhist'] = []
-                    self.object_count_history[k]['hour'] = []
+                    self.hist[k]['diffhist'] = []
+                    self.hist[k]['hour'] = []
                     _date = datetime.now().strftime('%Y%m%d')
 
 
             for k in self.cams.keys():
                 # self.log.info(f'{k=} ')
-                # self.log.info(f'{k=} | {self.object_count_history[k]=}')
+                # self.log.info(f'{k=} | {self.hist[k]=}')
 
                 if self.cams[k].isOpened():
                     ret,frame = self.cams[k].read()
@@ -262,15 +261,22 @@ class Campy():
                     # print(k)
                     # print(frame.shape)
 
-                    AvgFrame = self.avgFrame(self.object_count_history[k]['mframes'])
-
                     h = frame.shape[0]
                     w = frame.shape[1]
                     mframe = cv2.resize(frame, (int(w/8), int(h/8)) )
-                    # self.log.info(f'{mframe=}')
 
-                    self.object_count_history[k]['mframes'].append(mframe)
-                    self.object_count_history[k]['mframes'] = self.object_count_history[k]['mframes'][-self.history_size:]
+                    # first frame, just store it and continue to the next camera
+                    if len(self.hist[k]['mframes']) == 0:
+                        self.hist[k]['mframes'].append(mframe)
+                        self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
+                        continue
+
+                    AvgFrame = self.avgFrame(self.hist[k]['mframes'])
+
+
+
+                    self.hist[k]['mframes'].append(mframe)
+                    self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
 
                     dframe = np.subtract(AvgFrame,mframe)
                     difference = abs( round( np.sum(dframe) / (h*w*3.0*255.0) , 10 ) )
@@ -298,9 +304,9 @@ class Campy():
                                 j += 999
                     
 
-                    self.object_count_history[k]['diffhist'].append(difference)
+                    self.hist[k]['diffhist'].append(difference)
                     now = datetime.now()
-                    self.object_count_history[k]['hour'].append( now.hour + (now.minute / 60.0) )
+                    self.hist[k]['hour'].append( now.hour + (now.minute / 60.0) )
 
                     
                     if hasHotSpot == False:
@@ -324,14 +330,14 @@ class Campy():
                     # rlist = sorted([r['name'] for r in records])
                     
                     # # # update the history for this camera
-                    # self.object_count_history[k].append(rlist)
-                    # self.object_count_history[k] = self.object_count_history[k][-self.history_size:]
+                    # self.hist[k].append(rlist)
+                    # self.hist[k] = self.hist[k][-self.history_size:]
 
                     # # compare the number of objects with 
                     # # 1 sec ago, 15 sec ago, and 30 sec ago
                     # for m in [-1,0,30]:
                     #     try:
-                    #         if self.object_count_history[k][m] != rlist:
+                    #         if self.hist[k][m] != rlist:
                     #             self.log.info(results.__repr__())
                     #             for r in records:
                     #                 self.log.info(str(r))
@@ -355,8 +361,8 @@ class Campy():
         Returns:
             np.ndarray: the average image/frame 
         """
-
         return np.sum(frames,axis=0)/len(frames)
+
 
     def demo(self):
         """

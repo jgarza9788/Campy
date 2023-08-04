@@ -68,7 +68,7 @@ Once you have met these requirements, you should be able to run the script succe
 ## Running the Script
 
 1. meet the requirments above
-2. use `python Campy.py` (or something similar depending on your system)
+2. use `python main.py` (or something similar depending on your system)
     * note: depending on the last edit you might need to adjust it so it's not in edit more.
 
 ### for more advanced running techniques read the code
