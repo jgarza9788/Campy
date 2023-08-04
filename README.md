@@ -82,6 +82,9 @@ this can run on a dedicated machine or on your security system machine.
 
 
 ## things to do
+ * [] clean - revise code (break out into function)
+ * [] get two frames, and make sure both detect something
+    * this is because glitches do happen
  * [] enable multithreading
  * [x] cleans out old files
  * [x] the current algorithum only looks at how many objects with a specific period of time, but we should be looking both at the objects and their types.
