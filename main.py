@@ -132,7 +132,7 @@ class Campy():
             diffThreshold (float, optional): Defailts to 0.1 (10% difference), the amount of change before saving an image
             demo (bool, optional): Defaults to False., used for demo only
         """
-        self.url_template = 'rtsp://{user}:{password}@{ip}:{port}/cam/realmonitor?channel={cam}&subtype=0'
+        self.url_template = 'rtsp://{user}:{password}@{ip}:{port}/cam/realmonitor?channel={cam}&subtype=1'
         self.DIR = os.path.dirname(os.path.realpath(__file__))
 
         # logging stuff
@@ -179,9 +179,7 @@ class Campy():
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5m', pretrained=True)
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5l', pretrained=True)
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5x', pretrained=True)
-
         model_name = f"yolov5{model_size}"
-
         self.model = torch.hub.load('ultralytics/yolov5', model_name, pretrained=True)
         self.model.conf = min_confidence
         self.model.classes = classes
@@ -210,146 +208,194 @@ class Campy():
         """
         self.log.info('starting')
 
-        _date = datetime.now().strftime('%Y%m%d')
+        _day = datetime.now().strftime('%Y%m%d')
         _hour = datetime.now().strftime('%H')
+        t = time.time()
+
 
         while True:
 
-
-            # new hour
-            if _hour != datetime.now().strftime('%H'):
-                shutil.rmtree(os.path.join(self.DIR,'runs'))
-                _hour = datetime.now().strftime('%H')
-            
-            # new Day
-            if _date != datetime.now().strftime('%Y%m%d'):
-                for k in self.cams.keys():
-                    plt.figure(figsize=(16, 4))
-                    plt.plot(
-                            self.hist[k]['hour'],
-                            self.hist[k]['diffhist']
-                            )
-                    plt.xlabel('hour')
-                    plt.ylabel('diffhist')
-                    plt.title(_date)
-
-                    plt.savefig(self.get_filename('plot',[k]))
-
-                    dfbra = self.delete_files_by_regex_and_age
-                    dfbra(os.path.join(self.DIR,'frames'),'^(m_|u_).*png',90)
-                    dfbra(os.path.join(self.DIR,'frames'),'^(s_).*png',730)
-                    dfbra(os.path.join(self.DIR,'frames'),'^(dframe_).*png',1)
-                    dfbra(os.path.join(self.DIR,'plot'),'.*png',730)
-
-                    self.hist[k]['diffhist'] = []
-                    self.hist[k]['hour'] = []
-                    _date = datetime.now().strftime('%Y%m%d')
-
+            _hour = self.new_hour(_hour)
+            _day = self.new_day(_day)
+            t = time.time()
 
             for k in self.cams.keys():
-                # self.log.info(f'{k=} ')
+                self.log.info(f'{k=} ')
                 # self.log.info(f'{k=} | {self.hist[k]=}')
 
-                if self.cams[k].isOpened():
-                    ret,frame = self.cams[k].read()
+                if self.cams[k].isOpened() == False:
+                    self.log.warning(f'{k} cam is not open')
+                    continue # to the next camera
 
-                    if not ret:
-                        self.log.warning('not ret')
-                        self.cams[k] = self.get_cam(k)
-                        continue
+                #############################################
 
-                    # print(k)
-                    # print(frame.shape)
+                # ret,frame = self.cams[k].read()
 
-                    h = frame.shape[0]
-                    w = frame.shape[1]
-                    mframe = cv2.resize(frame, (int(w/8), int(h/8)) )
+                # if not ret:
+                #     self.log.warning('not ret')
+                #     self.cams[k] = self.get_cam(k)
+                #     continue # continue to next camera
 
-                    # first frame, just store it and continue to the next camera
-                    if len(self.hist[k]['mframes']) == 0:
-                        self.hist[k]['mframes'].append(mframe)
-                        self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
-                        continue
+                
+                #############################################
 
-                    AvgFrame = self.avgFrame(self.hist[k]['mframes'])
+                # raw_frames = self.get_raw_frames(k,5)
 
+                # if len(raw_frames) == 0:
+                #     continue
+
+                # frame_dict = self.raw_frames_to_collection(raw_frames)
 
 
+                try:
+                    frame = self.get_raw_avg_frames(k,5)
+                except:
+                    continue
+
+                # cv2.imwrite(self.get_filename('frames',['frame',k]),frame)
+
+                # filename = self.get_filename('frames',['x',k])
+                # cv2.imwrite(filename,frame)
+
+                #############################################
+
+                h = frame.shape[0]
+                w = frame.shape[1]
+                mframe = cv2.resize(frame, (int(w/8), int(h/8)) )
+                mframe = self.black_and_white(frame=mframe)
+
+                # first frame, just store it and continue to the next camera
+                if len(self.hist[k]['mframes']) == 0:
                     self.hist[k]['mframes'].append(mframe)
                     self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
+                    continue
 
-                    dframe = np.subtract(AvgFrame,mframe)
-                    difference = abs( round( np.sum(dframe) / (h*w*3.0*255.0) , 10 ) )
+                AvgFrame = self.avgFrame(self.hist[k]['mframes'])
 
-                    ## see if dframe has a hot-zone
-                    # chunkH = dframe.shape[0]//8
-                    # chunkW = dframe.shape[1]//8
+                self.hist[k]['mframes'].append(mframe)
+                self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
 
-                    chunkH = 10
-                    chunkW = 10
+                dframe = np.subtract(AvgFrame,mframe)
+                difference = abs( round( np.sum(dframe) / (h*w*255.0) , 10 ) )
+                # cv2.imwrite(self.get_filename('frames',['dframe',k]),dframe)
 
-                    hasHotSpot =  False
+                hasHotSpot = self.is_Hotspot(dframe=dframe)
 
-                    for i in range(0, dframe.shape[0], chunkH):
-                        for j in range(0, dframe.shape[1], chunkW):
-                            chunk = dframe[i:i+chunkH, j:j+chunkW]
+                self.hist[k]['diffhist'].append(difference)
+                now = datetime.now()
+                self.hist[k]['hour'].append( now.hour + (now.minute / 60.0) )
 
-                            sum_chuck = abs( round( np.sum(chunk)/(chunkH*chunkW*3.0*255.0) ,10 ))
+                if hasHotSpot == False:
+                    continue
 
-                            # self.log.info(f'{k} - {sum_chuck=}')
+                # self.log.info(f'{k} - {difference=} {self.diffThreshold=}')
+                self.log.info(f'{k} - {hasHotSpot=}')
 
-                            if sum_chuck > self.diffThreshold:
-                                hasHotSpot = True
-                                i += 999
-                                j += 999
-                    
+                results = self.model(frame)                    
+                rdf = results.pandas().xyxy[0]
+                records = rdf.to_dict(orient='records')
+                for r in records:
+                    self.log.info(str(r))
+                
+                self.save_frames(frame,k,results)
 
-                    self.hist[k]['diffhist'].append(difference)
-                    now = datetime.now()
-                    self.hist[k]['hour'].append( now.hour + (now.minute / 60.0) )
+                if self.save_dframes:
+                    cv2.imwrite(self.get_filename('frames',['dframe',k]),dframe)
 
-                    
-                    if hasHotSpot == False:
-                        continue
 
-                    self.log.info(f'{k} - {difference=} {self.diffThreshold=}')
-                    self.log.info(f'{k} - {hasHotSpot=}')
+            time.sleep(  max(0.0,min(1.0, self.interval - (time.time() - t)  )) )
 
-                    results = self.model(frame)                    
 
-                    rdf = results.pandas().xyxy[0]
-                    records = rdf.to_dict(orient='records')
-                    for r in records:
-                        self.log.info(str(r))
-                    
-                    self.save_frames(frame,k,results)
+    def get_raw_avg_frames(self,cam,num_of_frames:int) -> any:
+        frames = []
 
-                    if self.save_dframes:
-                        cv2.imwrite(self.get_filename('frames',['dframe',k,str(difference)]),dframe)
+        for _ in range(num_of_frames):
+            try:
+                ret,frame = self.cams[cam].read()
 
-                    # rlist = sorted([r['name'] for r in records])
-                    
-                    # # # update the history for this camera
-                    # self.hist[k].append(rlist)
-                    # self.hist[k] = self.hist[k][-self.history_size:]
+                if not ret:
+                    self.log.warning('not ret')
+                    self.cams[cam] = self.get_cam(cam)
+                    break # break this loop, returns empty list 
 
-                    # # compare the number of objects with 
-                    # # 1 sec ago, 15 sec ago, and 30 sec ago
-                    # for m in [-1,0,30]:
-                    #     try:
-                    #         if self.hist[k][m] != rlist:
-                    #             self.log.info(results.__repr__())
-                    #             for r in records:
-                    #                 self.log.info(str(r))
-                    #             self.save_frames(frame,k,results)
-                    #             break
-                    #     except:
-                    #         pass
+                frames.append(frame)
+            except:
+                pass
+        
+        return self.avgFrame(frames)
 
-                else:
-                    self.log.warning(f'{k} cam is not open')
-            time.sleep(self.interval)
+    def raw_frames_to_collection(self,frames:list[np.ndarray]):
+        # result = []
 
+        # for f in frames:
+        pass
+
+
+
+    def black_and_white(self,frame:np.ndarray):
+        luminance = np.dot(frame[..., :3], [0.299, 0.587, 0.114])
+        return np.expand_dims(luminance, axis=-1).astype(np.uint8)
+
+    def is_Hotspot(self,dframe:np.ndarray) -> bool:
+        """returns a bool if there is a hotspot on the frame
+
+        Args:
+            dframe (np.ndarray): a frame (numpy array) that shows the difference in the frame
+
+        Returns:
+            hasHotSpot: if a hotspot is detected
+        """
+        chunkH = 10
+        chunkW = 10
+
+        hasHotSpot =  False
+
+        for i in range(0, dframe.shape[0], chunkH):
+            for j in range(0, dframe.shape[1], chunkW):
+                chunk = dframe[i:i+chunkH, j:j+chunkW]
+
+                sum_chuck = abs( round( np.sum(chunk)/(chunkH*chunkW*3.0*255.0) ,10 ))
+
+                # self.log.info(f'{k} - {sum_chuck=}')
+
+                if sum_chuck > self.diffThreshold:
+                    hasHotSpot = True
+                    i += 999
+                    j += 999
+        
+        return hasHotSpot
+
+
+    def new_hour(self,hour):
+        if hour != datetime.now().strftime('%H'):
+            shutil.rmtree(os.path.join(self.DIR,'runs'))
+            hour = datetime.now().strftime('%H')
+        return hour
+
+    def new_day(self,day):
+        if day != datetime.now().strftime('%Y%m%d'):
+            for k in self.cams.keys():
+                plt.figure(figsize=(16, 4))
+                plt.plot(
+                        self.hist[k]['hour'],
+                        self.hist[k]['diffhist']
+                        )
+                plt.xlabel('hour')
+                plt.ylabel('diffhist')
+                plt.title(day)
+
+                plt.savefig(self.get_filename('plot',[k]))
+
+                dfbra = self.delete_files_by_regex_and_age
+                dfbra(os.path.join(self.DIR,'frames'),'^(m_|u_).*png',90)
+                dfbra(os.path.join(self.DIR,'frames'),'^(s_).*png',730)
+                dfbra(os.path.join(self.DIR,'frames'),'^(dframe_).*png',1)
+                dfbra(os.path.join(self.DIR,'plot'),'.*png',730)
+
+                self.hist[k]['diffhist'] = []
+                self.hist[k]['hour'] = []
+                day = datetime.now().strftime('%Y%m%d')
+        return day
 
 
     def avgFrame(self,frames:list[np.ndarray]):
@@ -362,7 +408,6 @@ class Campy():
             np.ndarray: the average image/frame 
         """
         return np.sum(frames,axis=0)/len(frames)
-
 
     def demo(self):
         """
