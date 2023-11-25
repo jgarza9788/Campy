@@ -1,4 +1,7 @@
-json5==0.9.8
-numpy==1.23.0
+json5==0.9.14
+matplotlib==3.7.1
+numpy==1.25.2
 opencv_python==4.8.0.74
+pandas==1.4.3
 torch==2.0.1
+ultralytics==8.0.145

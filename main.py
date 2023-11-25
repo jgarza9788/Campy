@@ -1,3 +1,9 @@
+try:
+    import os
+    os.system(".\\env\\Scripts\\activate")
+except:
+    print("Unable to activate environment")
+
 import os,time,re
 import json5 as json
 from datetime import datetime,timedelta
@@ -14,6 +20,15 @@ from logging import Logger
 from logging.handlers import RotatingFileHandler
 
 import matplotlib.pyplot as plt
+
+from PIL import Image, ImageDraw
+from pathlib import Path
+import torch
+from torchvision.transforms import functional as F
+from matplotlib.colors import to_rgba
+
+import ultralytics
+from ultralytics import YOLO
 
 # info on YOLO
 #https://docs.ultralytics.com/yolov5/tutorials/pytorch_hub_model_loading/#load-yolov5-with-pytorch-hub
@@ -113,7 +128,7 @@ class Campy():
             cam_nums=['1','2','3','4'],
             classes = [0,1,2,3,4,5,6,7,8,14,15,16],
             min_confidence=0.50,
-            model_size='m',
+            model_size='n',
             interval=1.0,
             history_size:int = 240,
             diffThreshold: float = 0.25,
@@ -179,10 +194,14 @@ class Campy():
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5m', pretrained=True)
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5l', pretrained=True)
         # self.model = torch.hub.load('ultralytics/yolov5', 'yolov5x', pretrained=True)
-        model_name = f"yolov5{model_size}"
-        self.model = torch.hub.load('ultralytics/yolov5', model_name, pretrained=True)
-        self.model.conf = min_confidence
-        self.model.classes = classes
+        model_name = f"yolov8{model_size}.pt"
+        self.log.info(f"{model_name=}")
+        # self.model = torch.hub.load('ultralytics/yolov5', model_name, pretrained=True)
+        self.model = YOLO(model_name)
+        # self.model.conf = min_confidence
+        # self.model.classes = classes
+        self.conf = min_confidence
+        self.classes = classes
 
         # # self.classes = classes
         # # self.min_confidence = min_confidence
@@ -261,6 +280,7 @@ class Campy():
 
                 h = frame.shape[0]
                 w = frame.shape[1]
+                # print(f"{h=} {w=}")
                 mframe = cv2.resize(frame, (int(w/8), int(h/8)) )
                 mframe = self.black_and_white(frame=mframe)
 
@@ -268,7 +288,7 @@ class Campy():
                 if len(self.hist[k]['mframes']) == 0:
                     self.hist[k]['mframes'].append(mframe)
                     self.hist[k]['mframes'] = self.hist[k]['mframes'][-self.history_size:]
-                    continue
+                    # continue
 
                 AvgFrame = self.avgFrame(self.hist[k]['mframes'])
 
@@ -285,19 +305,130 @@ class Campy():
                 now = datetime.now()
                 self.hist[k]['hour'].append( now.hour + (now.minute / 60.0) )
 
-                if hasHotSpot == False:
-                    continue
+                # if hasHotSpot == False:
+                #     continue
 
                 # self.log.info(f'{k} - {difference=} {self.diffThreshold=}')
                 self.log.info(f'{k} - {hasHotSpot=}')
 
-                results = self.model(frame)                    
-                rdf = results.pandas().xyxy[0]
-                records = rdf.to_dict(orient='records')
-                for r in records:
-                    self.log.info(str(r))
+
+                # results = self.model.predict(
+                #     frame.astype('uint8'),
+                #     save=True,
+                #     save_txt=True,
+                #     save_conf=True,
+                #     line_width=3,
+                #     boxes=True,
+                #     conf=self.conf,
+                #     classes=self.classes
+                #     )
+
+                results = self.model(
+                    frame.astype('uint8'),
+                    # show=True,
+                    conf=self.conf,
+                    save=True
+                    ) 
                 
-                self.save_frames(frame,k,results)
+                for r in results:
+                    # self.log.info(r._keys)
+                    # self.log.info(f"{r.boxes=}")
+                    # self.log.info(f"{r.masks=}")
+                    # self.log.info(f"{r.probs=}")
+                    # self.log.info(f"{r.keypoints=}")
+
+                    cls=[]
+                    for b in r.boxes:
+                        cls += [k for k,v in classes_dict.items() if v == b.cls.item()]
+                        # self.log.info(f"{b.cls=} {type(b.cls)}")
+                        # self.log.info(f"{b.conf=} {type(b.conf)}")
+
+                    self.log.info(cls)
+                    cls = '_'.join(cls)
+
+                    im_array = r.plot(
+                        boxes=True,
+                        labels=True,
+                        conf=True,
+                        font_size=12,
+                    )  # plot a BGR numpy array of predictions
+                    # im = Image.fromarray(im_array[..., ::-1])  # RGB PIL image
+                    # im.save(self.get_filename('frames',['ai','frame',k]))
+
+                    h = im_array.shape[0]
+                    w = im_array.shape[1]
+                    miniframe = cv2.resize(im_array, (int(w/2), int(h/2)) )
+                    filename = self.get_filename('frames',['s','ai',k,cls])
+                    cv2.imwrite(filename,miniframe)
+                    self.log.info(f'saved: {filename}')
+
+                #     im_array = r.plot(
+                #         boxes=True,
+                #         labels=True,
+                #         conf=True,
+                #         font_size=12,
+                #     )  # plot a BGR numpy array of predictions
+                #     im = Image.fromarray(im_array[..., ::-1])  # RGB PIL image
+                #     # im.show()  # show image
+                #     im.save('results.jpg')  # save image
+
+                # results = self.model(frame.astype('uint8')) 
+                # # self.log.info(f"{results=}")  
+
+                # # Draw bounding boxes and labels on the image
+                # draw = ImageDraw.Draw(Image.fromarray(frame.astype('uint8')))
+
+                # # Iterate over each result in the list
+                # for r in results:
+                #     boxes = r.boxes.tensor  # Access the tensor inside the Boxes object
+                #     masks = r.masks.tensor  # Access the tensor inside the Masks object
+                #     keypoints = r.keypoints  # Keypoints object for pose outputs
+                #     probs = r.probs  # Probs object for classification outputs
+
+                #     # Iterate over each bounding box in the result
+                #     for box, prob in zip(boxes, probs):
+                #         # Extract box coordinates
+                #         box = list(map(int, box))  # Assuming box is a tensor or list of coordinates
+
+                #         # Extract label and confidence
+                #         label = torch.argmax(prob).item()
+                #         confidence = prob[label].item()
+
+                #         # Define a color based on the label
+                #         color = to_rgba(plt.get_cmap('tab10')(label), alpha=0.8)
+
+                #         # Draw bounding box
+                #         draw.rectangle(box, outline=tuple(int(c * 255) for c in color[:3]), width=2)
+
+                #         # Prepare label text
+                #         label_text = f"{label}: {confidence:.2f}"
+
+                #         # Draw label
+                #         text_size = draw.textsize(label_text)
+                #         draw.rectangle([box[0], box[1], box[0] + text_size[0] + 4, box[1] + text_size[1] + 4], fill=tuple(int(c * 255) for c in color[:3]))
+                #         draw.text((box[0] + 2, box[1] + 2), label_text, fill=(255, 255, 255))
+
+                # Display or save the modified image
+                # frame.show()
+                # frame.save('result_image.jpg')
+
+
+                # for r in results:
+                #     im_array = r.plot()  # Assuming r.plot() returns a NumPy array
+                #     im_array = im_array.astype('uint8')  # Convert to uint8 data type
+                #     im = Image.fromarray(im_array)  # Create a PIL image
+                #     # im.show()  # Show the image
+                #     # im.save('results.jpg')  # Save the image
+                #     # self.save_frames(im,k,)
+                #     im.save(self.get_filename('frames',['ai','frame',k]))
+
+
+                # rdf = results.pandas().xyxy[0]
+                # records = rdf.to_dict(orient='records')
+                # for r in records:
+                #     self.log.info(str(r))
+                
+                # self.save_frames(frame,k,results)
 
                 if self.save_dframes:
                     cv2.imwrite(self.get_filename('frames',['dframe',k]),dframe)
@@ -329,7 +460,6 @@ class Campy():
 
         # for f in frames:
         pass
-
 
 
     def black_and_white(self,frame:np.ndarray):
@@ -490,7 +620,7 @@ class Campy():
         cv2.imwrite(filename,miniframe)
         self.log.info(f'saved: {filename}')
 
-        results.save()
+        # results.save()
         filename = self.get_filename('frames',['m',cam_num])
         cv2.imwrite(filename,frame)
         self.log.info(f'saved: {filename}')
@@ -609,7 +739,10 @@ if __name__ == "__main__":
     # print([k for k,v in classes_dict.items() if v in [1,2,3]])
 
     # Campy(demo=True).run_loop()
-    Campy(demo=False,save_dframe=True).run_loop()
+    Campy(
+        demo=False,
+        save_dframe=False,
+        ).run_loop()
 
     # x = [0,1,2,3,4,5,6,7,8]
     # x.append(9)

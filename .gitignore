@@ -3,7 +3,9 @@ secret.json
 *.csv
 *log
 *.log
+log
 *.pt
 runs
 frames
 frames\*
+env
